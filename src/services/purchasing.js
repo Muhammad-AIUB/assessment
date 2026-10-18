@@ -12,7 +12,7 @@ const TRANSITIONS = {
 export const canTransition = (from, to) => TRANSITIONS[from]?.includes(to) ?? false;
 
 const PO_SELECT = `
-  SELECT po.*, s.name AS supplier_name,
+  SELECT po.*, s.name AS supplier_name, s.lead_time_days,
     COALESCE(json_agg(json_build_object('id', pi.id, 'productId', pi.product_id, 'productName', p.name, 'sku', p.sku,
               'qty', pi.qty, 'unitCost', pi.unit_cost) ORDER BY p.name) FILTER (WHERE pi.id IS NOT NULL), '[]') AS items
   FROM purchase_orders po JOIN suppliers s ON s.id = po.supplier_id
@@ -22,14 +22,14 @@ export async function listPurchaseOrders(pool, { status } = {}) {
   const { rows } = await pool.query(
     `${PO_SELECT}
      WHERE ($1::po_status IS NULL OR po.status = $1)
-     GROUP BY po.id, s.name
+     GROUP BY po.id, s.id
      ORDER BY CASE po.status WHEN 'draft' THEN 0 WHEN 'ordered' THEN 1 ELSE 2 END, po.id DESC
      LIMIT 100`, [status ?? null]);
   return rows;
 }
 
 export async function getPurchaseOrder(pool, id) {
-  const { rows } = await pool.query(`${PO_SELECT} WHERE po.id = $1 GROUP BY po.id, s.name`, [id]);
+  const { rows } = await pool.query(`${PO_SELECT} WHERE po.id = $1 GROUP BY po.id, s.id`, [id]);
   if (!rows[0]) throw notFound('Purchase order not found');
   return rows[0];
 }
