@@ -33,8 +33,11 @@ export async function listProducts(pool, day = today()) {
        COALESCE(SUM(b.qty_on_hand) FILTER (WHERE b.state = 'active' AND b.expiry_date >= $1), 0)::INT AS usable,
        COALESCE(SUM(b.qty_on_hand) FILTER (WHERE b.state = 'active' AND b.expiry_date <  $1), 0)::INT AS expired,
        COALESCE(SUM(b.qty_on_hand) FILTER (WHERE b.state = 'active' AND b.expiry_date >= $1 AND b.expiry_date <= $1::date + $2::int), 0)::INT AS near_expiry,
+       MIN(b.expiry_date) FILTER (WHERE b.state = 'active' AND b.expiry_date >= $1) AS next_expiry,
        COALESCE((SELECT SUM(pi.qty) FROM po_items pi JOIN purchase_orders po ON po.id = pi.po_id
-                 WHERE pi.product_id = p.id AND po.status = 'ordered'), 0)::INT AS on_order
+                 WHERE pi.product_id = p.id AND po.status = 'ordered'), 0)::INT AS on_order,
+       COALESCE((SELECT SUM(ds.qty) FROM daily_sales ds
+                 WHERE ds.product_id = p.id AND ds.day > $1::date - 30), 0)::INT AS sold_30d
      FROM products p
      LEFT JOIN suppliers s ON s.id = p.supplier_id
      LEFT JOIN batches b ON b.product_id = p.id AND b.qty_on_hand > 0
