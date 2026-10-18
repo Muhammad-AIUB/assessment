@@ -69,6 +69,20 @@ export async function productForecast(pool, productId, day = today()) {
   const demandAt = (k) => fc.level * fc.season[(nextDow + k) % 7];
   const risk = simulateExpiryRisk(batches, demandAt, day);
 
+  // Outlook: day usable stock runs out at forecast demand (ignoring stock still on order),
+  // and the last day to order so a new delivery lands before that.
+  let runsOutIn = null;
+  for (let k = 0, left = stock.usable; k < 365; k++) {
+    left -= demandAt(k);
+    if (left < 0) { runsOutIn = k; break; }
+  }
+  const outlook = {
+    daysOfCover: runsOutIn,
+    runsOutOn: runsOutIn === null ? null : addDays(day, runsOutIn),
+    orderBy: runsOutIn === null ? null : addDays(day, Math.max(0, runsOutIn - product.lead_time_days)),
+    orderNow: runsOutIn !== null && runsOutIn <= product.lead_time_days,
+  };
+
   const historyDays = Math.min(values.length, 90);
   return {
     product: {
@@ -88,7 +102,52 @@ export async function productForecast(pool, productId, day = today()) {
     stock: { ...stock, onOrder },
     reorder: { ...reorder, demandOverCover: round2(reorder.demandOverCover), safetyStock: round2(reorder.safetyStock), errorSigma: round2(errorSigma) },
     risk,
+    outlook,
   };
+}
+
+/** Reorder planner: one row per active product, most urgent first. */
+export async function reorderPlan(pool, day = today()) {
+  const ids = (await pool.query('SELECT id FROM products WHERE active ORDER BY id')).rows.map((r) => r.id);
+  const rows = [];
+  for (const id of ids) {
+    const f = await productForecast(pool, id, day);
+    rows.push({
+      productId: id, name: f.product.name, unit: f.product.unit, supplierId: f.product.supplierId, supplierName: f.product.supplierName,
+      leadTimeDays: f.product.leadTimeDays, quantity: f.reorder.quantity, usable: f.stock.usable, onOrder: f.stock.onOrder,
+      next14: f.forecastTotals.next14, ...f.outlook, confidence: f.model.confidence,
+      beatsBaselines: f.backtest ? f.backtest.beatsBaselines : null,
+      atRisk: f.risk.reduce((s, r) => s + r.atRisk, 0),
+    });
+  }
+  const urgency = (r) => (r.quantity > 0 ? 0 : 1) * 1e6 + (r.daysOfCover ?? 99999);
+  return rows.sort((a, b) => urgency(a) - urgency(b));
+}
+
+/**
+ * Turn chosen planner lines into Draft POs — one per supplier.
+ * @param {{productId: number, qty: number}[]} items  quantities may be edited by the owner
+ */
+export async function draftPosFromPlan(pool, userId, items, day = today()) {
+  if (!Array.isArray(items) || !items.length) throw badRequest('Pick at least one product');
+  const { rows } = await pool.query(
+    `SELECT p.id, p.supplier_id,
+       (SELECT unit_cost FROM batches b WHERE b.product_id = p.id ORDER BY received_at DESC, id DESC LIMIT 1) AS last_cost
+     FROM products p WHERE p.id = ANY($1)`, [items.map((i) => Number(i.productId))]);
+  const info = new Map(rows.map((r) => [r.id, r]));
+  const bySupplier = new Map();
+  for (const it of items) {
+    const p = info.get(Number(it.productId));
+    if (!p) throw badRequest(`Unknown product ${it.productId}`);
+    if (!p.supplier_id) throw badRequest('A selected product has no supplier — set one first');
+    if (!bySupplier.has(p.supplier_id)) bySupplier.set(p.supplier_id, []);
+    bySupplier.get(p.supplier_id).push({ productId: p.id, qty: Number(it.qty), unitCost: p.last_cost });
+  }
+  const created = [];
+  for (const [supplierId, lines] of bySupplier) {
+    created.push(await createPurchaseOrder(pool, userId, { supplierId, note: `From reorder plan on ${day}`, items: lines }));
+  }
+  return created;
 }
 
 /** "Draft PO বানাও": turn the recommendation into a Draft purchase order. */

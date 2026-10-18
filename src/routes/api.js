@@ -77,6 +77,8 @@ export function apiRouter(pool) {
     forRole(req, await po.receiveOrder(pool, req.user.id, Number(req.params.id), req.body, { canSetCost: req.user.role === 'owner' }))));
 
   // ---- forecasting (owner) ----
+  r.get('/reorder-plan', ownerOnly, wrap(async () => fc.reorderPlan(pool)));
+  r.post('/reorder-plan/draft-pos', ownerOnly, wrap(async (req, res) => { res.status(201); return fc.draftPosFromPlan(pool, req.user.id, req.body.items); }));
   r.get('/forecast/:productId', ownerOnly, wrap(async (req) => fc.productForecast(pool, Number(req.params.productId))));
   r.post('/forecast/:productId/draft-po', ownerOnly, wrap(async (req, res) => { res.status(201); return fc.draftPoFromRecommendation(pool, req.user.id, Number(req.params.productId)); }));
   r.get('/model-report', ownerOnly, wrap(async () => fc.modelReport(pool)));

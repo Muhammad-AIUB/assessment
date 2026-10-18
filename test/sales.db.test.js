@@ -8,7 +8,7 @@ import { migrate } from '../scripts/migrate.js';
 import { createSale } from '../src/services/sales.js';
 import { writeOffBatch, listProducts } from '../src/services/inventory.js';
 import { createPurchaseOrder, placeOrder, receiveOrder, cancelOrder } from '../src/services/purchasing.js';
-import { draftPoFromRecommendation, productForecast } from '../src/services/forecasting.js';
+import { draftPoFromRecommendation, productForecast, reorderPlan, draftPosFromPlan } from '../src/services/forecasting.js';
 import { hashPassword } from '../src/services/auth.js';
 import { addDays } from '../src/dates.js';
 
@@ -180,4 +180,25 @@ test('forecast → reorder → Draft PO end to end', async () => {
   const po = await draftPoFromRecommendation(pool, 1, 1, TODAY);
   assert.equal(po.status, 'draft');
   assert.deepEqual(po.items.map((i) => [i.productId, i.qty]), [[1, 88]]);
+});
+
+test('reorder plan ranks products needing an order first and drafts one PO per supplier', async () => {
+  await pool.query(`INSERT INTO suppliers (id, name, lead_time_days) VALUES (2, 'Other', 5)`);
+  await pool.query(`UPDATE products SET supplier_id = 2 WHERE id = 2`);
+  const batch = await addBatch(1, 'H', '2027-12-31', 600);
+  for (let d = 40; d >= 1; d--) {
+    const s = (await pool.query('INSERT INTO sales (user_id, sale_date) VALUES (2, $1) RETURNING id', [addDays(TODAY, -d)])).rows[0];
+    await pool.query('INSERT INTO sale_lines (sale_id, product_id, batch_id, qty, unit_price) VALUES ($1, 1, $2, 5, 2.5)', [s.id, batch]);
+  }
+  await pool.query('UPDATE batches SET qty_on_hand = 10 WHERE id = $1', [batch]);
+
+  const plan = await reorderPlan(pool, TODAY);
+  assert.equal(plan[0].productId, 1);
+  assert.ok(plan[0].quantity > 0);
+  assert.equal(plan[0].daysOfCover, 2);          // 10 units at 5/day cover today and tomorrow
+  assert.equal(plan[0].runsOutOn, addDays(TODAY, 2));
+  const pos = await draftPosFromPlan(pool, 1, [{ productId: 1, qty: 40 }, { productId: 2, qty: 5 }], TODAY);
+  assert.equal(pos.length, 2);
+  assert.deepEqual(pos.map((p) => p.supplier_id).sort(), [1, 2]);
+  assert.ok(pos.every((p) => p.status === 'draft'));
 });

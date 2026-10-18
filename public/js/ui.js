@@ -37,7 +37,7 @@ export const STATUS = {
   depleted: ['Sold out', 'mute'], draft: ['Draft', 'mute'], ordered: ['Ordered', 'info'], received: ['Received', 'ok'], cancelled: ['Cancelled', 'bad'],
   discount: ['Discount it', 'warn'], return_to_supplier: ['Return to supplier', 'bad'], none: ['Will sell in time', 'ok'],
   low: ['Low confidence', 'warn'], normal: ['Normal confidence', 'info'], yes: ['Beats both', 'ok'], no: ['Does not beat', 'bad'],
-  owner: ['Owner', 'info'], staff: ['Staff', 'mute'],
+  owner: ['Owner', 'info'], staff: ['Staff', 'mute'], good: ['Good', 'ok'],
 };
 export const badge = (key, label) => {
   const [text, tone] = STATUS[key] ?? [key, 'mute'];

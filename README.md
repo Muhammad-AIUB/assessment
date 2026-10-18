@@ -37,6 +37,19 @@ Set `APP_TODAY=2026-10-18` in `.env` to freeze "today" (reproducible demo/backte
 
 ---
 
+## Using it
+
+| Screen | Built for |
+|---|---|
+| **Dashboard** | Today's takings and a 14-day trend, plus a *Needs attention* list, most urgent first, where each item has the one button that fixes it |
+| **Sell** | Counter speed. Type to search (`/` focuses it), `Enter` adds, a +/− stepper on each line, `Ctrl+Enter` completes. Each line shows which batch it will come from and blocks quantities above sellable stock, with a one-tap "Set to N". A receipt shows the batches used. On phones: two-column tiles and a floating cart bar |
+| **Stock & expiry** | Filter chips (below minimum, out of stock, expiring, expired), search, sortable columns, days of cover, an expiry meter on every batch, and a side drawer per product. A second view lists every batch grouped by expiry month |
+| **Purchase orders** | Status tabs (staff land on *To receive*), due/overdue hints, an order page with a timeline. The receive form can split a line into several batches, shows the "valid until" date for each expiry, and warns on short-dated stock and short deliveries |
+| **Forecast & reorder** | A **reorder planner** ranks every product by when it runs out; tick and adjust, and **one click creates draft orders, one per supplier**. The product page says it plainly ("Buy 120 strips by Mon 20 Oct"), shows the chart with a likely-range band, and explains the calculation line by line |
+| **Model report** | Backtest results in the app |
+
+Works on phones (bottom tab bar, slide-out menu) and in dark mode. It uses native `<dialog>`s, keeps keyboard focus visible, has a skip link, and moves focus to the new page on navigation.
+
 ## Roles
 
 | | Owner | Staff |
@@ -170,7 +183,8 @@ src/
   routes/api.js           REST API, auth, role checks, cost stripping for staff
   dates.js                calendar-date maths in UTC; "today" is the shop's date (APP_TZ)
 db/schema.sql             PostgreSQL schema (CHECK constraints guard qty ≥ 0 at the DB level too)
-public/                   no-build vanilla JS SPA + Chart.js
+public/                   no-build SPA: js/core.js (API, safe html``), js/ui.js (dialogs, drawer,
+                          toasts, expiry meter), js/pages/*.js — one module per screen
 scripts/                  migrate, seed, backtest reports
 test/                     *.unit.test.js (pure) and sales.db.test.js (real PostgreSQL)
 ```
@@ -181,7 +195,7 @@ Design decisions:
 - **Dates are `YYYY-MM-DD` strings** with UTC arithmetic. pg's `DATE` → JS `Date` conversion is turned off, so expiry never shifts by a day because of the timezone.
 - **Append-only `stock_movements`**: every receive, sale and write-off is a signed row, so stock can always be audited.
 
-## Tests (`npm test` → 36 tests)
+## Tests (`npm test` → 39 tests)
 
 **Critical: FEFO selling** (`fefo.unit.test.js`, `sales.db.test.js`)
 - takes the earliest expiry first, spans several batches, skips expired stock, and a batch is still sellable *on* its expiry day

@@ -26,6 +26,7 @@ const ROUTES = {
 };
 const allowed = ([, r]) => !r.owner || isOwner();
 const counts = {};
+let lastKey = null;
 
 function renderNav(active) {
   const groups = {};
@@ -72,6 +73,9 @@ async function route() {
   page.className = 'page';
   render(page, skeleton(6));
   view.replaceChildren(page);
+  // Moving to a different page: start at the top and put keyboard/screen-reader focus on the content.
+  if (key !== lastKey) { window.scrollTo(0, 0); if (lastKey) view.focus({ preventScroll: true }); }
+  lastKey = key;
   try {
     await r.page.render(page, args.map(decodeURIComponent));
   } catch (e) {

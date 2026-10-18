@@ -450,3 +450,35 @@ th.sortable[aria-sort]::after { content: " ↓"; } th.sortable[aria-sort="ascend
 [hidden] { display: none !important; }
 .group-row th { position: static; background: var(--surface); text-transform: none; letter-spacing: 0; font: 650 15px var(--font-display); color: var(--ink); padding-top: 18px; }
 .group-row th .count { font: 600 12px var(--font-body); color: var(--ink-3); margin-left: 8px; }
+
+/* ---------- forecast ---------- */
+.headline { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; border-left: 4px solid var(--brand); }
+.headline-text { font-family: var(--font-display); font-size: clamp(20px, 2.4vw, 26px); line-height: 1.25; margin-bottom: 4px; }
+.calc td { padding: 9px 4px; } .calc tr.calc-total td { border-top: 2px solid var(--ink); font-weight: 700; font-size: 16px; }
+.weekdays { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; height: 110px; margin-top: 14px; }
+.weekdays div { display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 2px; }
+.weekdays span { width: 70%; background: var(--brand-soft); border-top: 3px solid var(--brand); border-radius: 3px 3px 0 0; }
+.weekdays b { font-size: 12px; } .weekdays small { font-size: 11px; color: var(--ink-3); }
+tr.is-best td { background: var(--ok-soft); }
+.planner td { vertical-align: middle; }
+.planner tr.is-quiet td { color: var(--ink-3); }
+.planner tr.is-quiet a { color: var(--ink-2); }
+.planner a.cell-strong { color: var(--ink); text-decoration: none; } .planner a.cell-strong:hover { color: var(--brand); text-decoration: underline; }
+.planner input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--brand); }
+.qty-input { width: 90px; min-height: 36px; text-align: right; padding: 4px 8px; }
+.action-bar:not(:empty) { position: sticky; bottom: 16px; display: flex; align-items: center; gap: 14px; justify-content: space-between; padding: 12px 12px 12px 18px;
+  background: var(--ink); color: var(--paper); border-radius: var(--r); box-shadow: var(--shadow-lg); animation: toast-in .2s ease both; }
+@media (max-width: 860px) { .action-bar:not(:empty) { bottom: calc(80px + env(safe-area-inset-bottom)); } }
+
+/* ---------- a11y ---------- */
+.skip { position: absolute; left: 12px; top: -60px; z-index: 200; background: var(--ink); color: var(--paper); padding: 10px 14px; border-radius: var(--r-sm); text-decoration: none; font-weight: 600; }
+.skip:focus { top: 12px; }
+#view:focus { outline: none; }
+.planner td:nth-child(3) > span:first-child, .planner td:nth-child(4) > span { white-space: nowrap; }
+.shell > div { min-width: 0; } /* let wide tables scroll inside their card instead of stretching the page */
+@media (max-width: 640px) {
+  .planner th:nth-child(4), .planner td:nth-child(4), .planner th:nth-child(5), .planner td:nth-child(5),
+  .planner th:nth-child(6), .planner td:nth-child(6) { display: none; }
+  .planner th, .planner td { padding: 10px 8px; }
+  .qty-input { width: 70px; }
+}
