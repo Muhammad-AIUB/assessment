@@ -1,0 +1,27 @@
+{
+  "name": "pharmastock",
+  "version": "1.0.0",
+  "description": "Batch & expiry-aware stock, FEFO sales and demand forecasting for small pharmacies",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "db:up": "docker compose up -d db",
+    "migrate": "node scripts/migrate.js",
+    "seed": "node scripts/seed.js",
+    "setup": "npm run migrate && npm run seed",
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test",
+    "test:unit": "node --test test/fefo.unit.test.js test/forecast.unit.test.js",
+    "backtest": "node scripts/backtest-report.js",
+    "backtest:csv": "node scripts/backtest-csv.js"
+  },
+  "dependencies": {
+    "cookie-parser": "^1.4.7",
+    "express": "^4.21.2",
+    "pg": "^8.13.1"
+  }
+}
