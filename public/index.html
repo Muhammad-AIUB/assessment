@@ -2,33 +2,62 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0e5a43">
   <title>PharmaStock</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230e5a43'/%3E%3Cpath d='M13 7h6v6h6v6h-6v6h-6v-6H7v-6h6z' fill='%23fffdf8'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,650;12..96,750&family=Hind+Siliguri:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js" defer></script>
-  <script src="/app.js" type="module"></script>
+  <script src="/js/app.js" type="module"></script>
 </head>
 <body>
   <div id="login" class="login hidden">
-    <form id="login-form" class="card login-card">
-      <h1>PharmaStock</h1>
-      <p class="muted">Batch, expiry &amp; demand-aware stock for small pharmacies</p>
-      <label>Username <input name="username" autocomplete="username" required></label>
-      <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
-      <button class="primary" type="submit">Log in</button>
-      <p class="error" id="login-error"></p>
-      <p class="muted small">Demo: <code>owner / owner123</code> · <code>staff / staff123</code></p>
-    </form>
+    <section class="login-art">
+      <svg class="cross" viewBox="0 0 32 32" aria-hidden="true"><path d="M11 3h10v8h8v10h-8v8H11v-8H3V11h8z" fill="currentColor"/></svg>
+      <div>
+        <div class="logo" style="color:inherit;padding:0 0 28px"><span class="logo-mark" style="background:var(--brand-ink);color:var(--brand)"><svg viewBox="0 0 32 32"><path d="M13 7h6v6h6v6h-6v6h-6v-6H7v-6h6z" fill="currentColor"/></svg></span>PharmaStock</div>
+        <h1>Never sell an expired strip again.</h1>
+        <p>Batch-by-batch stock with expiry dates, first-expiry-first-out selling, and a demand forecast that tells you how much to buy.</p>
+      </div>
+      <ul>
+        <li>✓ Sells the oldest-expiring batch automatically</li>
+        <li>✓ Warns you 60 days before medicine expires</li>
+        <li>✓ Reorder quantities from your own sales history</li>
+      </ul>
+    </section>
+    <section class="login-panel">
+      <form id="login-form" class="login-card" novalidate>
+        <div><h2 style="font-size:24px">Welcome back</h2><p class="muted">Log in to open the counter.</p></div>
+        <label class="field"><span>Username</span><input name="username" autocomplete="username" autocapitalize="none" required></label>
+        <label class="field"><span>Password</span><input name="password" type="password" autocomplete="current-password" required></label>
+        <p class="field-error" id="login-error" role="alert"></p>
+        <button class="btn btn-primary btn-lg btn-block" type="submit">Log in</button>
+        <div>
+          <p class="small muted" style="margin-bottom:8px">Demo accounts (synthetic data) — tap to fill:</p>
+          <div class="demo-accounts">
+            <button type="button" data-demo="owner"><b>Owner</b><span>owner / owner123</span></button>
+            <button type="button" data-demo="staff"><b>Staff</b><span>staff / staff123</span></button>
+          </div>
+        </div>
+      </form>
+    </section>
   </div>
 
   <div id="shell" class="shell hidden">
-    <header class="topbar">
-      <div class="brand">PharmaStock</div>
-      <nav id="nav"></nav>
-      <div class="who"><span id="who"></span> <span id="today" class="muted small"></span> <button id="logout" class="ghost">Log out</button></div>
-    </header>
-    <main id="view"></main>
+    <aside class="sidebar" id="sidebar" aria-label="Main navigation"></aside>
+    <div class="scrim" id="scrim"></div>
+    <div>
+      <header class="topbar">
+        <button class="icon-btn" id="menu-btn" aria-label="Open menu" aria-controls="sidebar"></button>
+        <a class="logo" href="#/dashboard"><span class="logo-mark"><svg viewBox="0 0 32 32"><path d="M13 7h6v6h6v6h-6v6h-6v-6H7v-6h6z" fill="currentColor"/></svg></span>PharmaStock</a>
+      </header>
+      <main class="content" id="view" tabindex="-1"></main>
+    </div>
+    <nav class="tabbar" id="tabbar" aria-label="Quick navigation"></nav>
   </div>
-  <div id="toast" class="toast hidden"></div>
+  <div id="toasts" aria-live="polite"></div>
 </body>
 </html>
