@@ -131,3 +131,32 @@ export function busy(button, fn) {
 }
 
 export { esc };
+
+/** Side drawer (native <dialog>). Returns the dialog element; `body` can be replaced later via render(). */
+export function openDrawer({ title, subtitle = '', body, onClose }) {
+  const dlg = document.createElement('dialog');
+  dlg.className = 'drawer';
+  render(dlg, html`<header class="drawer-head"><div><h2>${title}</h2>${subtitle ? html`<p class="muted small">${subtitle}</p>` : ''}</div>
+    <button type="button" class="icon-btn" data-close aria-label="Close">${icon('x')}</button></header><div class="drawer-body">${body}</div>`);
+  document.body.append(dlg);
+  const close = () => dlg.close();
+  dlg.addEventListener('close', () => { dlg.remove(); onClose?.(); });
+  dlg.addEventListener('click', (e) => { if (e.target === dlg) close(); });
+  dlg.querySelector('[data-close]').addEventListener('click', close);
+  // Close the drawer if the user navigates away with the browser's back button.
+  window.addEventListener('hashchange', close, { once: true });
+  dlg.showModal();
+  return dlg;
+}
+
+/** Tiny bar chart as inline SVG — no library, scales to its container. */
+export function barSpark(values, { labels = [], height = 64, highlightLast = true, format = (v) => v } = {}) {
+  const max = Math.max(1, ...values);
+  const w = 100 / values.length;
+  return html`<svg class="spark" viewBox="0 0 100 ${height}" preserveAspectRatio="none" role="img" aria-label="Trend chart">
+    ${values.map((v, i) => {
+      const h = Math.max(1.5, (v / max) * (height - 4));
+      return html`<rect x="${i * w + w * 0.15}" y="${height - h}" width="${w * 0.7}" height="${h}" rx="1"
+        class="${highlightLast && i === values.length - 1 ? 'is-last' : ''}"><title>${labels[i] ?? ''}: ${format(v)}</title></rect>`;
+    })}</svg>`;
+}

@@ -77,3 +77,17 @@ export async function recentSales(pool, { limit = 30 } = {}) {
      GROUP BY s.id, u.name ORDER BY s.id DESC LIMIT $1`, [limit]);
   return rows;
 }
+
+/** Dashboard numbers: today's takings and the daily revenue trend for the last `days` days. */
+export async function salesSummary(pool, day = today(), days = 14) {
+  const { rows } = await pool.query(
+    `SELECT d::date::text AS day,
+            COALESCE(SUM(sl.qty * sl.unit_price), 0)::float AS revenue,
+            COALESCE(SUM(sl.qty), 0)::int AS units,
+            COUNT(DISTINCT s.id)::int AS sales
+     FROM generate_series($1::date - ($2::int - 1), $1::date, interval '1 day') d
+     LEFT JOIN sales s ON s.sale_date = d::date
+     LEFT JOIN sale_lines sl ON sl.sale_id = s.id
+     GROUP BY d ORDER BY d`, [day, days]);
+  return { today: rows[rows.length - 1], trend: rows };
+}

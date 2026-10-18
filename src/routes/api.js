@@ -12,9 +12,10 @@ const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res)).then((dat
 
 /** Staff must never see purchase prices — strip them centrally, not per page. */
 const COST_KEYS = new Set(['unit_cost', 'unitCost']);
-function stripCosts(value) {
+export function stripCosts(value) {
   if (Array.isArray(value)) return value.map(stripCosts);
-  if (value && typeof value === 'object') {
+  // Only walk plain objects: Dates (timestamps) etc. must pass through untouched.
+  if (value && Object.getPrototypeOf(value) === Object.prototype) {
     return Object.fromEntries(Object.entries(value).filter(([k]) => !COST_KEYS.has(k)).map(([k, v]) => [k, stripCosts(v)]));
   }
   return value;
@@ -63,6 +64,7 @@ export function apiRouter(pool) {
   // ---- sales ----
   r.post('/sales', wrap(async (req, res) => { res.status(201); return sales.createSale(pool, req.user.id, req.body); }));
   r.get('/sales', wrap(async () => sales.recentSales(pool)));
+  r.get('/summary', wrap(async () => sales.salesSummary(pool)));
 
   // ---- purchasing ----
   r.get('/purchase-orders', wrap(async (req) => forRole(req, await po.listPurchaseOrders(pool, { status: req.query.status || null }))));
