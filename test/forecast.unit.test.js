@@ -75,6 +75,26 @@ test('weekday indices average to 1 so level = average daily demand', () => {
   assert.equal(predict(s, 7).length, 7);
 });
 
+test('a nearly-closed weekday does not blow up the forecast (real-data regression)', () => {
+  // Like the public pharmacy dataset: ~400/day on weekdays, ~1% of that on Sundays, then one
+  // ordinary Sunday sale. The multiplicative form would divide by an index of ~0.02 and explode.
+  const r = lcg(3);
+  const y = Array.from({ length: 182 }, (_, i) => (i % 7 === 6 ? (r() < 0.1 ? 30 : 0) : Math.round(400 + (r() - 0.5) * 120)));
+  y[174] = 450; // a normal-sized sale on a Sunday (182 days → the forecast starts on a Monday)
+  const f = forecast(y, 0, 7);
+  assert.equal(f.seasonality, 'additive');
+  assert.ok(Math.max(...f.forecast) < 600, `forecast exploded: ${f.forecast.map(Math.round)}`);
+  assert.ok(f.forecast[6] < 120, 'Sunday stays low');
+  assert.ok(f.forecast.slice(0, 6).every((v) => v > 250), 'weekdays stay at their usual level');
+});
+
+test('multiplicative form is still chosen where it fits (no near-zero weekday)', () => {
+  const f = forecast(weeklySeries(147, 30, 0), 0, 7); // 147 = 21 weeks → forecast starts Monday
+  assert.equal(f.method, 'seasonal_es');
+  assert.ok(['multiplicative', 'additive'].includes(f.seasonality));
+  f.forecast.forEach((v, i) => close(v, Math.round(30 * WEEK[i]), 0.6));
+});
+
 test('forecast never goes negative on sparse data', () => {
   const y = Array.from({ length: 60 }, (_, i) => (i % 9 === 0 ? 3 : 0));
   assert.ok(forecast(y, 0, 14).forecast.every((v) => v >= 0));

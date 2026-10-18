@@ -112,7 +112,7 @@ async function renderProduct(el, pid) {
           <tbody>${f.risk.map((x) => html`<tr><td><span class="batch-no">${x.batchNo}</span></td><td>${fmtDate(x.expiryDate)}</td><td class="num">${x.qtyOnHand}</td>
             <td class="num cell-strong ${x.atRisk ? 'hint-bad' : ''}">${x.atRisk}</td><td>${badge(x.suggestion)}</td></tr>`)}</tbody></table></div>` : emptyState('box', 'No sellable batches')}</section>
       <section class="card"><div class="card-head"><h2>Model</h2>${badge(m.confidence)}</div>
-        <p>${m.method === 'seasonal_es' ? `Weekly exponential smoothing (α ${m.alpha}, γ ${m.gamma})` : 'Simple average'} · ${m.historyDays} days of history · ${pct(m.zeroDayShare)} days with no sales</p>
+        <p>${m.method === 'seasonal_es' ? `Weekly exponential smoothing, ${m.seasonality} weekday effect (α ${m.alpha}, γ ${m.gamma})` : 'Simple average'} · ${m.historyDays} days of history · ${pct(m.zeroDayShare)} days with no sales</p>
         <div class="weekdays" aria-label="Weekday pattern">${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d, i) => html`<div><span style="height:${Math.min(100, m.season[i] * 55)}%"></span><b>${d}</b><small>${m.season[i].toFixed(2)}</small></div>`)}</div>
         ${bt ? html`<table class="small" style="margin-top:12px"><thead><tr><th>Backtest · ${bt.windows} weeks</th><th class="num">MAE</th><th class="num">WAPE</th></tr></thead><tbody>
           ${[['model', 'This model'], ['seasonal_naive', 'Same day last week'], ['mean_7', '7-day average']].map(([k, label]) =>

@@ -57,7 +57,10 @@ Dividing by an actual value of 0 is undefined, so MAPE has nothing to say about 
 With 30–75% zero days there is no weekday pattern to learn. A flat 7-day mean is as good, or better. The fix would be Croston/SBA for intermittent demand. The forecast page warns when the model lost its backtest for that product.
 
 **Isn't evaluating on your own synthetic data cheating?**
-Partly, which is why the seed adds lognormal noise, Poisson sampling and random spikes, and why the model still loses on 5 products. `npm run backtest:csv` runs the same backtest on any real daily-sales CSV.
+Partly. That's why the seed adds lognormal noise, Poisson sampling and random spikes, and why the same backtest was also run on real pharmacy data (README → *Public dataset*).
+
+**Did you test it on real data?**
+Yes, on a public pharmacy POS dataset (Indonesia, 2015, CC BY 4.0). It exposed a real bug: on near-closed weekdays the multiplicative weekday index went to about 0.01, and dividing by it blew the forecast up. I fixed it by also fitting an additive form and choosing per product on validation data. The before/after numbers are in the README. Synthetic data alone would never have shown this.
 
 **How do staff receive goods if they can't see prices?**
 The owner sets the unit cost when ordering. On receive, the server uses the PO price for staff and ignores any price they send (there's a test for this).

@@ -19,7 +19,8 @@
     "backtest": "node scripts/backtest-report.js",
     "backtest:csv": "node scripts/backtest-csv.js",
     "db:reset": "node scripts/migrate.js --reset",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "dataset:pharmacy": "node scripts/prepare-pharmacy-dataset.js data/external/mendeley-pharmacy/sales.sql data/external/pharmacy-daily.csv"
   },
   "dependencies": {
     "cookie-parser": "^1.4.7",

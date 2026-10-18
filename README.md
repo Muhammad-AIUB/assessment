@@ -27,7 +27,7 @@ Demo logins (seed data only): **owner / owner123** · **staff / staff123**
 
 | Command | What it does |
 |---|---|
-| `npm test` | all 49 tests: unit, PostgreSQL integration and HTTP end-to-end (needs `npm run db:up`) |
+| `npm test` | all 51 tests: unit, PostgreSQL integration and HTTP end-to-end (needs `npm run db:up`) |
 | `npm run lint` | ESLint (also runs in CI on every push: `.github/workflows/ci.yml`) |
 | `npm run migrate` | apply pending migrations from `db/migrations/` (safe to repeat) |
 | `npm run test:unit` | pure FEFO + forecast tests, no database |
@@ -85,16 +85,17 @@ Permissions are enforced in the API (`src/routes/api.js`), not just hidden in th
 **Output:** daily demand for the next 7/14 days, plus a reorder quantity.
 
 ### Model — `model.js`
-A simplified Holt-Winters model: exponentially smoothed **level** × **day-of-week seasonal index** (no trend term).
+A simplified Holt-Winters model: an exponentially smoothed **level** plus a **day-of-week effect** (no trend term). The weekday effect comes in two forms, and each product gets the one that validates better:
 
 ```
-forecast(t+h)  = level_t × season[weekday(t+h)]
-level_t        = α · (y_t / season[d]) + (1 − α) · level_{t−1}
-season[d]      = γ · (y_t / level_t)   + (1 − γ) · season[d]
+multiplicative:  forecast = level × season[d]     level = α·(y / season[d]) + (1−α)·level     season[d] = γ·(y / level) + (1−γ)·season[d]
+additive:        forecast = level + season[d]     level = α·(y − season[d]) + (1−α)·level     season[d] = γ·(y − level) + (1−γ)·season[d]
 ```
+
+Why two forms: on **real** pharmacy data some weekdays are almost closed, giving a weekday index of about 0.01. The multiplicative form divides by that index, so one ordinary sale on such a day becomes 100× the level and the forecast explodes. The additive form has no division. Multiplicative is not allowed when any weekday index is below 0.2 (see [Public dataset](#public-dataset-real-pharmacy-sales)).
 
 - **Initialisation:** level = mean of the first 28 days. The weekday indices are each weekday's mean ÷ the overall mean over the training window. At the end, the indices are rescaled to average 1, so `level` means "average units per day".
-- **Choosing α and γ:** grid search, α ∈ {0.05…0.7}, γ ∈ {0…0.3}. The score is MAE on the last **28 days** of history, measured the way the model is actually used: from 4 weekly origins, each forecasting 7 days ahead. If two settings tie, the smoother one wins.
+- **Choosing the form, α and γ:** grid search over form ∈ {multiplicative, additive}, α ∈ {0.05…0.7}, γ ∈ {0…0.3}. The score is MAE on the last **28 days** of history, measured the way the model is actually used: from 4 weekly origins, each forecasting 7 days ahead. If two settings tie, the smoother one wins.
 - **Fewer than 28 days of history:** falls back to the plain mean and shows **"Low confidence"** (see *Montelukast* in the seed data).
 
 ### Evaluation — `backtest.js`, `metrics.js`
@@ -109,25 +110,33 @@ Metrics:
 - **WAPE** = Σ|error| / Σ actual. It still works when many days have zero sales.
 - **MAPE**, computed only on days with sales > 0 (you can't divide by zero). The report says how many days were counted. MAPE alone would be misleading for intermittent items, which is why WAPE is the headline number.
 
-### Results on the seeded data (as of 2026-10-18)
+### Results on the seeded data (`APP_TODAY=2026-10-18 npm run backtest`)
 
-**The model beats both baselines on 12 of 17 products** (the 18th has too little history to score).
+**The model beats both baselines on 11 of 17 products** (the 18th has too little history to score).
 
 | Pooled over all products | MAE | WAPE |
 |---|---|---|
-| **Model** | **3.38** | **35.9 %** |
+| **Model** | **3.38** | **35.8 %** |
 | Seasonal naive | 4.49 | 47.6 % |
 | Mean of last 7 days | 3.59 | 38.1 % |
 
 **Where it wins:** every fast mover (Paracetamol, Napa, Omeprazole, ORS) and almost every medium mover. These products have a weekly pattern that the weekday index picks up.
 
-**Where it does NOT win, and why:**
+**Where it does NOT win, and why** (on this synthetic data; on real data see below):
 - **Slow / intermittent items** (eye drops, thermometer, bandage, zinc syrup; 30–75 % zero days): a weekday index can't be learned from mostly zeros, so the flat 7-day mean does as well or better. The next step would be Croston/SBA for these items.
 - **N95 mask** (random multi-day spikes): spikes are unpredictable from history by construction, and any smoother lags behind them.
 
 The forecast page shows a warning on any product where the model lost its backtest.
 
-The first version used only 4 weeks to set the weekday indices and tuned on a single 14-day block. It beat the baselines on just **5/17** products, roughly tied with mean-7. Estimating the indices from the full training window and tuning on rolling 7-day origins fixed that. Both versions are honest; the second one is better.
+How the model got here, with every version scored honestly:
+
+| Version | Synthetic data (17 products) | Real pharmacy data (200 drugs) |
+|---|---|---|
+| v1: indices from the first 4 weeks, tuned on one 14-day block | beats both on 5/17, roughly tied with mean-7 | not tested |
+| v2: indices from the whole training window, tuned on rolling 7-day origins | beats both on 12/17, pooled WAPE 35.9 % | beats both on 125/200, but pooled WAPE **122.5 %**, worse than both baselines (81.2 %, 90.5 %) because of the near-closed-weekday blow-up |
+| **v3 (current): form chosen per product (additive / multiplicative)** | beats both on **11/17**, pooled WAPE **35.8 %** | beats both on **168/200**, pooled WAPE **70.3 %**, best of the three |
+
+The v2 → v3 change cost one synthetic win. Amlodipine moved from 3.25 vs 3.30 to 3.31 vs 3.30 MAE, so it is now just behind the 7-day mean. Every slow item improved (eye drops 0.73 → 0.67, thermometer 0.48 → 0.40).
 
 ### Reorder — `reorder.js`
 ```
@@ -161,12 +170,61 @@ There is no real sales history, so `scripts/seed.js` **simulates** one (fixed RN
   - a slow-moving thermometer batch with surplus stock
   - an Ordered PO in transit and a Draft PO
 
-**Public dataset:** `npm run backtest:csv` runs the same backtest on any daily CSV. For example, Kaggle's *Store Item Demand Forecasting Challenge* `train.csv` with `--item=item --qty=sales`. No external dataset is bundled; check the dataset's licence before using it.
+## Public dataset: real pharmacy sales
+
+The same walk-forward backtest, unchanged, was run on real point-of-sale data from a pharmacy.
+
+**Source and licence.** Gustriansyah, R. (2022). *Retail sales dataset of a pharmacy in Indonesia.* Mendeley Data, V1. [doi:10.17632/2ym7v78wtd.1](https://doi.org/10.17632/2ym7v78wtd.1). Licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+
+Changes made:
+- the `transaction` table was summed to units per product per day
+- 268 rows with quantity ≤ 0 (returns or corrections) were dropped
+- days with no sale count as 0
+
+The data is not committed to this repository.
+
+**What it contains:**
+- 399,470 sale lines for 2,042 products
+- every day of 2015 (365 days)
+- mostly prescription medicine, with near-zero sales on some weekdays
+
+**Reproduce:**
+
+```bash
+mkdir -p data/external/mendeley-pharmacy
+```
+
+Download `sales.zip` from the DOI above into that folder and unzip it there (it contains `sales.sql`, a MariaDB dump). Then:
+
+```bash
+npm run dataset:pharmacy
+```
+
+```bash
+npm run backtest:csv -- data/external/pharmacy-daily.csv --top=200 --quiet
+```
+
+The dump is **parsed as text, never executed** (`scripts/prepare-pharmacy-dataset.js`). The backtest scores the 200 products with the most units sold, which is 86 % of all units in the year.
+
+**Results (7-day horizon, last 26 weekly windows, re-tuned at every origin):**
+
+| Segment | Items | Model beats both | Pooled MAE: model / same-day-last-week / 7-day mean | Pooled WAPE: model / same-day-last-week / 7-day mean |
+|---|---|---|---|---|
+| Fast (≥ 15/day) | 70 | 65 | **60.6** / 72.2 / 84.7 | **54.6 %** / 65.1 % / 76.3 % |
+| Medium | 12 | 7 | **9.4** / 11.5 / 9.6 | **71.8 %** / 87.4 % / 73.1 % |
+| Slow / intermittent (≥ 30 % zero days) | 118 | 96 | **32.0** / 35.5 / 37.4 | **104.9 %** / 116.6 % / 122.7 % |
+| **All 200** | 200 | **168 (84 %)** | **40.8** / 47.1 / 52.5 | **70.3 %** / 81.2 % / 90.5 % |
+
+**What this shows:**
+- **Real data found a real bug.** The earlier model (v2 in the table above) beat both baselines on 125/200 items, but its pooled WAPE was 122.5 %, worse than either baseline. A few high-volume drugs with near-zero weekdays blew up the multiplicative update, for example item AI-0406 with MAE 1,576 vs 240 for same-day-last-week. The synthetic data had no such weekdays, so it could never have shown this. Choosing the seasonal form per product fixed it.
+- **Researcher degrees of freedom.** The fix was designed *after* seeing this dataset fail, so these numbers are not a fully untouched hold-out. The fix is a standard modelling choice, not tuning to the test. The form is picked per product on that product's own past (validation window) and re-picked at every backtest origin, and the synthetic results stayed the same.
+- **Intermittent items remain hard.** WAPE above 100 % means the total error exceeds the units sold. The model is still better than both baselines on these items, but a forecast for a drug that sells a few times a month is a rough guide. That is why the app shows *Rough guide* and *Low confidence* badges, and why Croston/SBA is the next step.
+- **Only one year of data**, so annual seasonality can't be tested here either.
 
 ## Limitations
 
-- The data is synthetic. The results show the method works on *plausible* data, not that it is accurate for a real shop.
-- The model is weak on slow and intermittent items, and the report says so.
+- The app's demo history is synthetic. The real-data check (above) is a different pharmacy, in a different country, from 2015, and only one year long. It shows the method holds up on real demand, not that it is calibrated for any particular shop.
+- Slow and intermittent items have high error in absolute terms (WAPE above 100 % on real data), even where the model beats the baselines. The app labels these forecasts as rough guides.
 - Not modelled: promotions, yearly seasons (monsoon diarrhoea → ORS, winter flu), sudden demand jumps, and trend.
 - The model is only evaluated 7 days ahead. The expiry-risk projection months out is a rough estimate.
 - When stock runs out, the sales history records what was sold, not what was asked for. Long stock-outs bias the forecast down.
@@ -217,7 +275,7 @@ Details are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#security-summary).
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Layers, ER diagram, the sale step by step, full API table, security summary |
 | [docs/DEMO.md](docs/DEMO.md) | 12-minute live-demo script, a line-by-line model walkthrough, likely review questions with answers |
 
-## Tests (`npm test` → 49 tests)
+## Tests (`npm test` → 51 tests)
 
 **HTTP end to end** (`http.db.test.js`, the real app on a random port)
 * 401 without a session

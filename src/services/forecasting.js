@@ -94,7 +94,7 @@ export async function productForecast(pool, productId, day = today()) {
     forecast: fc.forecast.slice(0, HORIZON).map((qty, i) => ({ day: addDays(day, i), qty: round2(qty) })),
     forecastTotals: { next7: round2(sum(fc.forecast.slice(0, 7))), next14: round2(sum(fc.forecast.slice(0, 14))) },
     model: {
-      method: fc.method, confidence: fc.confidence, alpha: fc.alpha ?? null, gamma: fc.gamma ?? null,
+      method: fc.method, seasonality: fc.seasonality ?? null, confidence: fc.confidence, alpha: fc.alpha ?? null, gamma: fc.gamma ?? null,
       level: round2(fc.level), season: fc.season.map(round2), historyDays: values.length,
       zeroDayShare: values.length ? round2(values.filter((v) => v === 0).length / values.length) : null,
     },
