@@ -4,7 +4,7 @@ import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createPool } from '../src/db.js';
 import { config } from '../src/config.js';
-import { migrate } from '../scripts/migrate.js';
+import { resetDatabase } from '../scripts/migrate.js';
 import { createSale } from '../src/services/sales.js';
 import { writeOffBatch, listProducts } from '../src/services/inventory.js';
 import { createPurchaseOrder, placeOrder, receiveOrder, cancelOrder } from '../src/services/purchasing.js';
@@ -24,7 +24,7 @@ before(async () => {
 after(() => pool?.end());
 
 beforeEach(async () => {
-  await migrate(pool);
+  await resetDatabase(pool);
   const h = await hashPassword('secret1');
   await pool.query(`INSERT INTO users (id, name, username, password_hash, role) VALUES (1,'O','o',$1,'owner'), (2,'S','s',$1,'staff')`, [h]);
   await pool.query(`INSERT INTO suppliers (id, name, lead_time_days) VALUES (1, 'Sup', 3)`);

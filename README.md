@@ -19,7 +19,7 @@ Requirements: Node 20+, Docker.
 cp .env.example .env
 npm install
 npm run db:up        # PostgreSQL 16 on localhost:5433 (creates pharmastock + pharmastock_test)
-npm run setup        # create schema + seed ~9 months of synthetic history
+npm run setup        # apply migrations + seed ~9 months of synthetic history
 npm start            # http://localhost:3000
 ```
 
@@ -27,11 +27,13 @@ Demo logins (seed data only): **owner / owner123** · **staff / staff123**
 
 | Command | What it does |
 |---|---|
-| `npm test` | all tests (unit + PostgreSQL integration; needs `npm run db:up`) |
+| `npm test` | all 49 tests: unit, PostgreSQL integration and HTTP end-to-end (needs `npm run db:up`) |
+| `npm run lint` | ESLint (also runs in CI on every push: `.github/workflows/ci.yml`) |
+| `npm run migrate` | apply pending migrations from `db/migrations/` (safe to repeat) |
 | `npm run test:unit` | pure FEFO + forecast tests, no database |
 | `npm run backtest` | prints the model-vs-baseline table for every product |
 | `npm run backtest:csv -- file.csv --item=item --qty=sales` | same backtest on any daily sales CSV |
-| `npm run seed` | **drops everything** and reseeds |
+| `npm run seed` · `npm run db:reset` | **drop everything** and reseed / rebuild (development only) |
 
 Set `APP_TODAY=2026-10-18` in `.env` to freeze "today" (reproducible demo/backtest numbers).
 
@@ -182,7 +184,7 @@ src/
   services/               DB + transactions: sales, purchasing, inventory, forecasting, auth
   routes/api.js           REST API, auth, role checks, cost stripping for staff
   dates.js                calendar-date maths in UTC; "today" is the shop's date (APP_TZ)
-db/schema.sql             PostgreSQL schema (CHECK constraints guard qty ≥ 0 at the DB level too)
+db/migrations/            versioned SQL migrations (CHECK constraints guard qty ≥ 0 at the DB level too)
 public/                   no-build SPA: js/core.js (API, safe html``), js/ui.js (dialogs, drawer,
                           toasts, expiry meter), js/pages/*.js — one module per screen
 scripts/                  migrate, seed, backtest reports
@@ -195,7 +197,39 @@ Design decisions:
 - **Dates are `YYYY-MM-DD` strings** with UTC arithmetic. pg's `DATE` → JS `Date` conversion is turned off, so expiry never shifts by a day because of the timezone.
 - **Append-only `stock_movements`**: every receive, sale and write-off is a signed row, so stock can always be audited.
 
-## Tests (`npm test` → 39 tests)
+## Security
+
+* Parameterised SQL only.
+* Every HTML value is escaped, and a strict Content-Security-Policy is set.
+* The session cookie is `httpOnly` and `SameSite=Strict`, and the database stores only a hash of the token.
+* Passwords use scrypt.
+* Login is throttled (429 after 5 failures). An unknown username and a wrong password get the same message and take the same time.
+* Roles are enforced in the API, and staff responses have costs removed.
+* All input is validated at the edge (400, never 500), with database constraints behind that.
+
+Details are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#security-summary).
+
+## Documentation
+
+| Doc | Contents |
+|---|---|
+| [docs/PLANNING.md](docs/PLANNING.md) | Problem breakdown, build order, decisions and trade-offs, risks |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Layers, ER diagram, the sale step by step, full API table, security summary |
+| [docs/DEMO.md](docs/DEMO.md) | 12-minute live-demo script, a line-by-line model walkthrough, likely review questions with answers |
+
+## Tests (`npm test` → 49 tests)
+
+**HTTP end to end** (`http.db.test.js`, the real app on a random port)
+* 401 without a session
+* the cookie is `httpOnly` / `SameSite=Strict`, and only its hash is stored
+* logout ends the session
+* login is throttled, and an unknown user gets the same message as a wrong password
+* staff get 403 on 11 owner endpoints and never see a cost on any endpoint
+* staff can't override the purchase price when receiving
+* 18 kinds of malformed input each return 400, never 500
+* security headers are present
+* product editing works, with a 409 for a duplicate SKU
+
 
 **Critical: FEFO selling** (`fefo.unit.test.js`, `sales.db.test.js`)
 - takes the earliest expiry first, spans several batches, skips expired stock, and a batch is still sellable *on* its expiry day

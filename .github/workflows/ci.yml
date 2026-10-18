@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: pharma
+          POSTGRES_PASSWORD: pharma
+          POSTGRES_DB: pharmastock_test
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U pharma"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://pharma:pharma@localhost:5433/pharmastock_test
+      DATABASE_URL: postgres://pharma:pharma@localhost:5433/pharmastock_test
+      APP_TODAY: "2026-10-18"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - name: Seed + backtest smoke test
+        run: npm run seed && npm run backtest

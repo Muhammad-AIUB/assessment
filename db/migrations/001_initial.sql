@@ -1,6 +1,4 @@
--- PharmaStock schema. Re-runnable: drops and recreates everything (used by migrate + tests).
-DROP SCHEMA IF EXISTS public CASCADE;
-CREATE SCHEMA public;
+-- 001: initial PharmaStock schema.
 
 CREATE TYPE user_role     AS ENUM ('owner', 'staff');
 CREATE TYPE po_status     AS ENUM ('draft', 'ordered', 'received', 'cancelled');

@@ -3,19 +3,20 @@ import { badRequest, conflict, notFound } from '../errors.js';
 import { batchStatus } from '../domain/batchStatus.js';
 import { config } from '../config.js';
 import { today } from '../dates.js';
+import { id, int, money, text, LIMITS } from '../validate.js';
 
 // ---------- suppliers ----------
 export async function listSuppliers(pool) {
   return (await pool.query('SELECT * FROM suppliers ORDER BY name')).rows;
 }
 
-export async function createSupplier(pool, { name, phone, leadTimeDays }) {
-  if (!name?.trim()) throw badRequest('Supplier name is required');
-  const lead = Number(leadTimeDays ?? 3);
-  if (!Number.isInteger(lead) || lead < 0) throw badRequest('Lead time must be a whole number of days ≥ 0');
+export async function createSupplier(pool, { name, phone, leadTimeDays } = {}) {
+  name = text(name, 'Supplier name', { max: 120 });
+  phone = text(phone, 'Phone', { optional: true, max: 30 });
+  const lead = int(leadTimeDays ?? 3, 'Lead time (days)', { max: LIMITS.days });
   try {
     return (await pool.query('INSERT INTO suppliers (name, phone, lead_time_days) VALUES ($1, $2, $3) RETURNING *',
-      [name.trim(), phone?.trim() || null, lead])).rows[0];
+      [name, phone, lead])).rows[0];
   } catch (e) {
     if (e.code === '23505') throw conflict('A supplier with this name already exists');
     throw e;
@@ -52,19 +53,58 @@ export async function getProduct(pool, id) {
   return p;
 }
 
+/** Validate and normalise product fields (shared by create and update). */
+function productFields(b = {}) {
+  return {
+    sku: text(b.sku, 'SKU', { max: 40 }),
+    name: text(b.name, 'Product name', { max: 120 }),
+    unit: text(b.unit, 'Unit', { optional: true, max: 20 }) ?? 'pcs',
+    supplierId: b.supplierId === undefined || b.supplierId === null || b.supplierId === '' ? null : id(b.supplierId, 'Supplier'),
+    lead: int(b.leadTimeDays, 'Lead time (days)', { max: LIMITS.days }),
+    review: int(b.reviewPeriodDays ?? 7, 'Review period (days)', { min: 1, max: LIMITS.days }),
+    min: int(b.minLevel ?? 0, 'Minimum level', { max: LIMITS.qty }),
+    price: money(b.sellPrice, 'Sell price'),
+  };
+}
+
+export async function updateProduct(pool, productId, b) {
+  const p = productFields(b);
+  const active = b.active === undefined ? true : Boolean(b.active);
+  try {
+    const { rows } = await pool.query(
+      `UPDATE products SET sku = $2, name = $3, unit = $4, supplier_id = $5, lead_time_days = $6, review_period_days = $7,
+         min_level = $8, sell_price = $9, active = $10 WHERE id = $1 RETURNING *`,
+      [productId, p.sku, p.name, p.unit, p.supplierId, p.lead, p.review, p.min, p.price, active]);
+    if (!rows[0]) throw notFound('Product not found');
+    return rows[0];
+  } catch (e) {
+    if (e.code === '23505') throw conflict('SKU already exists');
+    if (e.code === '23503') throw badRequest('Unknown supplier');
+    throw e;
+  }
+}
+
+export async function updateSupplier(pool, supplierId, { name, phone, leadTimeDays } = {}) {
+  name = text(name, 'Supplier name', { max: 120 });
+  phone = text(phone, 'Phone', { optional: true, max: 30 });
+  const lead = int(leadTimeDays, 'Lead time (days)', { max: LIMITS.days });
+  try {
+    const { rows } = await pool.query('UPDATE suppliers SET name = $2, phone = $3, lead_time_days = $4 WHERE id = $1 RETURNING *', [supplierId, name, phone, lead]);
+    if (!rows[0]) throw notFound('Supplier not found');
+    return rows[0];
+  } catch (e) {
+    if (e.code === '23505') throw conflict('A supplier with this name already exists');
+    throw e;
+  }
+}
+
 export async function createProduct(pool, b) {
-  const sku = b.sku?.trim(), name = b.name?.trim();
-  if (!sku || !name) throw badRequest('SKU and name are required');
-  const lead = Number(b.leadTimeDays), min = Number(b.minLevel ?? 0), price = Number(b.sellPrice), review = Number(b.reviewPeriodDays ?? 7);
-  if (!Number.isInteger(lead) || lead < 0) throw badRequest('Lead time must be a whole number of days ≥ 0');
-  if (!Number.isInteger(min) || min < 0) throw badRequest('Minimum level must be a whole number ≥ 0');
-  if (!Number.isInteger(review) || review <= 0) throw badRequest('Review period must be ≥ 1 day');
-  if (!(price >= 0)) throw badRequest('Sell price must be ≥ 0');
+  const p = productFields(b);
   try {
     return (await pool.query(
       `INSERT INTO products (sku, name, unit, supplier_id, lead_time_days, review_period_days, min_level, sell_price)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-      [sku, name, b.unit?.trim() || 'pcs', b.supplierId || null, lead, review, min, price])).rows[0];
+      [p.sku, p.name, p.unit, p.supplierId, p.lead, p.review, p.min, p.price])).rows[0];
   } catch (e) {
     if (e.code === '23505') throw conflict('SKU already exists');
     if (e.code === '23503') throw badRequest('Unknown supplier');
@@ -90,14 +130,14 @@ export async function expiryAlerts(pool, day = today()) {
 
 /** Owner removes a batch from stock with a mandatory reason; recorded in stock history. */
 export async function writeOffBatch(pool, userId, batchId, reason, day = today()) {
-  if (!reason?.trim() || reason.trim().length < 3) throw badRequest('A write-off reason is required');
+  reason = text(reason, 'Write-off reason', { min: 3 });
   return withTransaction(pool, async (c) => {
     const b = (await c.query('SELECT * FROM batches WHERE id = $1 FOR UPDATE', [batchId])).rows[0];
     if (!b) throw notFound('Batch not found');
     if (b.state === 'written_off') throw conflict('Batch is already written off');
     if (b.qty_on_hand > 0) {
       await c.query(`INSERT INTO stock_movements (batch_id, product_id, type, qty, reason, user_id, movement_date)
-                     VALUES ($1, $2, 'write_off', $3, $4, $5, $6)`, [b.id, b.product_id, -b.qty_on_hand, reason.trim(), userId, day]);
+                     VALUES ($1, $2, 'write_off', $3, $4, $5, $6)`, [b.id, b.product_id, -b.qty_on_hand, reason, userId, day]);
     }
     const updated = (await c.query(`UPDATE batches SET state = 'written_off', qty_on_hand = 0 WHERE id = $1 RETURNING *`, [b.id])).rows[0];
     return { ...updated, writtenOffQty: b.qty_on_hand };

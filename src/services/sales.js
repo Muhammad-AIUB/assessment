@@ -1,7 +1,8 @@
 import { withTransaction } from '../db.js';
 import { allocateFefo, shortageMessage } from '../domain/fefo.js';
-import { badRequest, conflict, notFound } from '../errors.js';
+import { conflict, notFound } from '../errors.js';
 import { today } from '../dates.js';
+import { id, int, list, LIMITS } from '../validate.js';
 
 /**
  * Record a sale. Each line is allocated FEFO across batches; expired batches are skipped.
@@ -14,15 +15,13 @@ import { today } from '../dates.js';
  * @param {{ items: {productId: number, qty: number}[] }} input
  */
 export async function createSale(pool, userId, { items }, day = today()) {
-  if (!Array.isArray(items) || items.length === 0) throw badRequest('At least one item is required');
+  list(items, 'Items');
 
   // Merge duplicate product lines, validate quantities.
   const wanted = new Map();
   for (const it of items) {
-    const productId = Number(it.productId);
-    const qty = Number(it.qty);
-    if (!Number.isInteger(productId)) throw badRequest('Invalid product');
-    if (!Number.isInteger(qty) || qty <= 0) throw badRequest('Quantity must be a positive whole number');
+    const productId = id(it?.productId, 'Product');
+    const qty = int(it?.qty, 'Quantity', { min: 1, max: LIMITS.qty });
     wanted.set(productId, (wanted.get(productId) ?? 0) + qty);
   }
   const productIds = [...wanted.keys()].sort((a, b) => a - b);

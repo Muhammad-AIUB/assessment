@@ -1,6 +1,7 @@
 import { withTransaction } from '../db.js';
 import { badRequest, conflict, notFound } from '../errors.js';
 import { parseExpiry, today } from '../dates.js';
+import { id, int, money, text, list, LIMITS } from '../validate.js';
 
 // Allowed state transitions. Received and Cancelled are terminal.
 const TRANSITIONS = {
@@ -24,7 +25,7 @@ export async function listPurchaseOrders(pool, { status } = {}) {
      WHERE ($1::po_status IS NULL OR po.status = $1)
      GROUP BY po.id, s.id
      ORDER BY CASE po.status WHEN 'draft' THEN 0 WHEN 'ordered' THEN 1 ELSE 2 END, po.id DESC
-     LIMIT 100`, [status ?? null]);
+     LIMIT 1000`, [status ?? null]);
   return rows;
 }
 
@@ -35,16 +36,14 @@ export async function getPurchaseOrder(pool, id) {
 }
 
 function validateItems(items) {
-  if (!Array.isArray(items) || !items.length) throw badRequest('A purchase order needs at least one item');
+  list(items, 'Order items');
   const seen = new Set();
   return items.map((it) => {
-    const productId = Number(it.productId), qty = Number(it.qty);
-    const unitCost = it.unitCost === undefined || it.unitCost === null || it.unitCost === '' ? null : Number(it.unitCost);
-    if (!Number.isInteger(productId)) throw badRequest('Invalid product');
+    const productId = id(it?.productId, 'Product');
+    const qty = int(it?.qty, 'Quantity', { min: 1, max: LIMITS.qty });
+    const unitCost = money(it?.unitCost, 'Unit cost', { optional: true });
     if (seen.has(productId)) throw badRequest('Each product may appear only once per order');
     seen.add(productId);
-    if (!Number.isInteger(qty) || qty <= 0) throw badRequest('Quantity must be a positive whole number');
-    if (unitCost !== null && !(unitCost >= 0)) throw badRequest('Unit cost must be ≥ 0');
     return { productId, qty, unitCost };
   });
 }
@@ -52,10 +51,10 @@ function validateItems(items) {
 export async function createPurchaseOrder(pool, userId, { supplierId, note, items }) {
   const clean = validateItems(items);
   return withTransaction(pool, async (c) => {
-    const sup = (await c.query('SELECT id FROM suppliers WHERE id = $1', [supplierId])).rows[0];
+    const sup = (await c.query('SELECT id FROM suppliers WHERE id = $1', [id(supplierId, 'Supplier')])).rows[0];
     if (!sup) throw badRequest('Unknown supplier');
     const po = (await c.query(`INSERT INTO purchase_orders (supplier_id, note, created_by) VALUES ($1, $2, $3) RETURNING id`,
-      [sup.id, note?.trim() || null, userId])).rows[0];
+      [sup.id, text(note, 'Note', { optional: true }), userId])).rows[0];
     for (const it of clean) {
       await c.query('INSERT INTO po_items (po_id, product_id, qty, unit_cost) VALUES ($1, $2, $3, $4)',
         [po.id, it.productId, it.qty, it.unitCost]).catch((e) => {
@@ -109,7 +108,7 @@ export const cancelOrder = (pool, poId) => transition(pool, poId, 'cancelled', '
  * @param {{ lines: {poItemId, batchNo, expiry, qty, unitCost?}[] }} input
  */
 export async function receiveOrder(pool, userId, poId, { lines }, { canSetCost }, day = today()) {
-  if (!Array.isArray(lines) || !lines.length) throw badRequest('Nothing to receive');
+  list(lines, 'Received lines');
   return withTransaction(pool, async (c) => {
     const po = (await c.query('SELECT * FROM purchase_orders WHERE id = $1 FOR UPDATE', [poId])).rows[0];
     if (!po) throw notFound('Purchase order not found');
@@ -120,17 +119,19 @@ export async function receiveOrder(pool, userId, poId, { lines }, { canSetCost }
     const created = [];
     for (const [i, l] of lines.entries()) {
       const where = `Line ${i + 1}`;
-      const item = items.get(Number(l.poItemId));
+      const item = items.get(Number(l?.poItemId));
       if (!item) throw badRequest(`${where}: item does not belong to this order`);
-      const batchNo = String(l.batchNo ?? '').trim();
-      if (!batchNo) throw badRequest(`${where}: batch number is required`);
+      let batchNo;
+      try { batchNo = text(l.batchNo, 'batch number', { max: 40 }); } catch (e) { throw badRequest(`${where}: ${e.message}`); }
       let expiry;
       try { expiry = parseExpiry(l.expiry); } catch (e) { throw badRequest(`${where}: ${e.message}`); }
       if (expiry < day) throw badRequest(`${where}: batch ${batchNo} is already expired (${expiry}) — do not accept it`);
-      const qty = Number(l.qty);
-      if (!Number.isInteger(qty) || qty <= 0) throw badRequest(`${where}: quantity must be a positive whole number`);
-      const cost = canSetCost && l.unitCost !== undefined && l.unitCost !== '' && l.unitCost !== null ? Number(l.unitCost) : item.unit_cost;
-      if (cost === null || !(cost >= 0)) throw badRequest(`${where}: purchase price is missing`);
+      let qty, cost;
+      try {
+        qty = int(l.qty, 'quantity', { min: 1, max: LIMITS.qty });
+        cost = canSetCost ? money(l.unitCost, 'unit cost', { optional: true }) ?? item.unit_cost : item.unit_cost;
+      } catch (e) { throw badRequest(`${where}: ${e.message}`); }
+      if (cost === null) throw badRequest(`${where}: purchase price is missing`);
 
       const total = (receivedPerItem.get(item.id) ?? 0) + qty;
       if (total > item.qty) throw badRequest(`${where}: receiving ${total} but only ${item.qty} were ordered`);

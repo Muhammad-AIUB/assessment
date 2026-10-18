@@ -85,6 +85,9 @@ async function route() {
 }
 window.addEventListener('hashchange', route);
 
+// Skip link: focus the content without changing the route hash.
+$('.skip').addEventListener('click', (e) => { e.preventDefault(); view.focus(); });
+
 // ---------- mobile nav ----------
 const closeNav = () => $('#shell').classList.remove('nav-open');
 render($('#menu-btn'), icon('menu'));

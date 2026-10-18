@@ -8,7 +8,7 @@
 //
 // Deterministic: a fixed RNG seed gives the same data every run.
 import { createPool, withTransaction } from '../src/db.js';
-import { migrate } from './migrate.js';
+import { resetDatabase } from './migrate.js';
 import { hashPassword } from '../src/services/auth.js';
 import { allocateFefo } from '../src/domain/fefo.js';
 import { today, addDays, weekday, parseExpiry } from '../src/dates.js';
@@ -92,7 +92,7 @@ function demandSeries(rng, kind, mean, days, startDay) {
 
 export async function seed(pool, { day = today(), log = console.log } = {}) {
   const rng = mulberry32(20261018);
-  await migrate(pool);
+  await resetDatabase(pool);
 
   const start = addDays(day, -HISTORY_DAYS);
   const suppliers = SUPPLIERS.map((s, i) => ({ id: i + 1, ...s }));
